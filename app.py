@@ -88,7 +88,6 @@ def guardar_registro(tipo, categoria, monto, tasa, nota, user_id):
                                     return
                             except Exception as e:
         pass  # Si falla la verificación, continuar con el registro
-                                        pass  # Si falla la verificación, continuar con el registro
     
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     nuevo_dato = {
@@ -280,6 +279,7 @@ else:
             st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
+
 
 
 
