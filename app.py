@@ -75,8 +75,14 @@ def guardar_registro(tipo, categoria, monto, tasa, nota, user_id):
         try:
 
             tiempo_limite = (datetime.now() - timedelta(seconds=5)).strftime("%Y-%m-%d %H:%M:%S")
-                    duplicados = supabase.table("movimientos").select("*").eq("user_id", user_id).eq("tipo", tipo).eq("categoria", categoria).eq("monto", float(monto)).gte("fecha", tiempo_limite).execute()
-                    if duplicados.data:
+        duplicados = (supabase.table("movimientos")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("tipo", tipo)
+            .eq("categoria", categoria)
+            .eq("monto", float(monto))
+            .gte("fecha", tiempo_limite)
+            .execute())                    if duplicados.data:
                                     st.warning("⚠️ Ya existe un registro idéntico reciente. Evita hacer clic múltiple en el mismo botón.")
                                     return
                             except Exception as e:
@@ -272,6 +278,7 @@ else:
             st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
+
 
 
 
