@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 from supabase import create_client, Client
 
@@ -70,6 +70,17 @@ def guardar_registro(tipo, categoria, monto, tasa, nota, user_id):
     if monto <= 0:
         st.error("⚠️ El monto debe ser mayor a 0")
         return
+
+        # Verificar si ya existe un registro duplicado reciente (últimos 5 segundos)
+        try:
+
+            tiempo_limite = (datetime.now() - timedelta(seconds=5)).strftime("%Y-%m-%d %H:%M:%S")
+                    duplicados = supabase.table("movimientos").select("*").eq("user_id", user_id).eq("tipo", tipo).eq("categoria", categoria).eq("monto", float(monto)).gte("fecha", tiempo_limite).execute()
+                    if duplicados.data:
+                                    st.warning("⚠️ Ya existe un registro idéntico reciente. Evita hacer clic múltiple en el mismo botón.")
+                                    return
+                            except Exception as e:
+                                        pass  # Si falla la verificación, continuar con el registro
     
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     nuevo_dato = {
@@ -261,5 +272,6 @@ else:
             st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
+
 
 
