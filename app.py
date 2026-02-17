@@ -214,7 +214,7 @@ else:
         if st.button("🚀 Salidas", use_container_width=True):
             guardar_registro("Gasto", "Salidas", monto_input, tasa_input, nota_input, user_id)
         if st.button("🏢 Inversión Ofic.", use_container_width=True):
-            guardar_registro("Ahorro", "Inversión Ofic.", monto_input, tasa_input, nota_input, user_id)
+            guardar_registro("Gasto", "Inversión Ofic.", monto_input, tasa_input, nota_input, user_id)
         if st.button("🔧 Otros Vehiculo", use_container_width=True):
             guardar_registro("Gasto", "Otros Vehiculo", monto_input, tasa_input, nota_input, user_id)
     
@@ -239,3 +239,4 @@ else:
             st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
+
