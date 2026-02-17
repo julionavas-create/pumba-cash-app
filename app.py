@@ -79,7 +79,7 @@ def guardar_registro(tipo, categoria, monto, tasa, nota, user_id):
             .select("*")
             .eq("user_id", user_id)
             .eq("tipo", tipo)
-            .eq("categoria", categoria)
+                    .eq("categoria", categoria)
             .eq("monto", float(monto))
             .gte("fecha", tiempo_limite)
             .execute())
@@ -279,6 +279,7 @@ else:
             st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
+
 
 
 
