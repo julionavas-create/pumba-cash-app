@@ -1,31 +1,83 @@
 import streamlit as st
 import pandas as pd
-import os
 from datetime import datetime
+from github import Github
+import base64
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Pumba Cash App", page_icon="🐗", layout="centered")
 
-# --- CONSTANTES ---
-# En la nube no usamos rutas C:\Users... usamos rutas relativas
-ARCHIVO_CSV = "mis_finanzas_web.csv"
+# --- CONFIGURACIÓN DE GITHUB ---
+GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+GITHUB_REPO = st.secrets["GITHUB_REPO"]
+GITHUB_BRANCH = st.secrets["GITHUB_BRANCH"]
+CSV_FILE = st.secrets["CSV_FILE"]
 
-# --- FUNCIONES DE BACKEND ---
-def inicializar_archivo():
-    if not os.path.exists(ARCHIVO_CSV):
-        df = pd.DataFrame(columns=["Fecha", "Tipo", "Categoria", "Monto", "Tasa", "Nota"])
-        df.to_csv(ARCHIVO_CSV, index=False)
+# --- FUNCIONES DE BACKEND CON GITHUB ---
+@st.cache_resource
+def get_github_repo():
+    """Inicializa conexión con GitHub (se cachea para no repetir)"""
+    g = Github(GITHUB_TOKEN)
+    return g.get_repo(GITHUB_REPO)
+
+def leer_csv_desde_github():
+    """Lee el archivo CSV desde GitHub"""
+    try:
+        repo = get_github_repo()
+        file_content = repo.get_contents(CSV_FILE, ref=GITHUB_BRANCH)
+        csv_data = base64.b64decode(file_content.content).decode('utf-8')
+        
+        # Convertir CSV string a DataFrame
+        from io import StringIO
+        df = pd.read_csv(StringIO(csv_data))
+        return df, file_content.sha
+    except Exception as e:
+        # Si el archivo no existe o hay error, retornamos DataFrame vacío
+        st.warning(f"Leyendo archivo desde GitHub... {str(e)}")
+        return pd.DataFrame(columns=["Fecha", "Tipo", "Categoria", "Monto", "Tasa", "Nota"]), None
+
+def guardar_csv_en_github(df, sha=None):
+    """Guarda el DataFrame en GitHub"""
+    try:
+        repo = get_github_repo()
+        
+        # Convertir DataFrame a CSV string
+        csv_content = df.to_csv(index=False)
+        
+        # Actualizar o crear el archivo en GitHub
+        if sha:
+            # Actualizar archivo existente
+            repo.update_file(
+                path=CSV_FILE,
+                message=f"Actualizar registros - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                content=csv_content,
+                sha=sha,
+                branch=GITHUB_BRANCH
+            )
+        else:
+            # Crear archivo nuevo
+            repo.create_file(
+                path=CSV_FILE,
+                message=f"Crear archivo de registros - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                content=csv_content,
+                branch=GITHUB_BRANCH
+            )
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar en GitHub: {str(e)}")
+        return False
 
 def cargar_datos():
-    if os.path.exists(ARCHIVO_CSV):
-        return pd.read_csv(ARCHIVO_CSV)
-    return pd.DataFrame(columns=["Fecha", "Tipo", "Categoria", "Monto", "Tasa", "Nota"])
+    """Carga datos desde GitHub"""
+    df, _ = leer_csv_desde_github()
+    return df
 
 def guardar_registro(tipo, categoria, monto, tasa, nota):
+    """Guarda un nuevo registro en GitHub"""
     if monto <= 0:
         st.error("⚠️ El monto debe ser mayor a 0")
         return
-
+    
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     nuevo_dato = {
         "Fecha": fecha,
@@ -36,28 +88,35 @@ def guardar_registro(tipo, categoria, monto, tasa, nota):
         "Nota": nota
     }
     
-    # Guardar en CSV
-    df = cargar_datos()
-    df = pd.concat([df, pd.DataFrame([nuevo_dato])], ignore_index=True)
-    df.to_csv(ARCHIVO_CSV, index=False)
+    # Cargar datos actuales desde GitHub
+    df, sha = leer_csv_desde_github()
     
-    # Mensaje de éxito
-    if tipo == "Ingreso":
-        st.success(f"✅ Ingreso registrado: {categoria} (${monto})")
-    elif tipo == "Gasto":
-        st.warning(f"📉 Gasto registrado: {categoria} (-${monto})")
+    # Agregar nuevo registro
+    df = pd.concat([df, pd.DataFrame([nuevo_dato])], ignore_index=True)
+    
+    # Guardar en GitHub
+    if guardar_csv_en_github(df, sha):
+        # Mensaje de éxito
+        if tipo == "Ingreso":
+            st.success(f"✅ Ingreso registrado: {categoria} (${monto})")
+        elif tipo == "Gasto":
+            st.warning(f"📉 Gasto registrado: {categoria} (-${monto})")
+        else:
+            st.info(f"🐷 Ahorro registrado: {categoria} (${monto})")
+        
+        # Limpiar cache para recargar datos
+        st.cache_resource.clear()
+        st.rerun()
     else:
-        st.info(f"🐷 Ahorro registrado: {categoria} (${monto})")
-
-# --- INICIO DEL PROGRAMA ---
-inicializar_archivo()
+        st.error("❌ Error al guardar el registro")
 
 # --- HEADER (Imagen y Título) ---
 col_img, col_title = st.columns([1, 4])
 with col_img:
-    # Si tienes la imagen en la misma carpeta, descomenta la siguiente línea:
-    # st.image("pumba.PNG", width=80) 
-    st.write("🐗") # Emoji temporal si no hay imagen
+    try:
+        st.image("pumba.png", width=80)
+    except:
+        st.write("🐗")
 with col_title:
     st.title("Pumba Cash Web")
 
@@ -66,9 +125,9 @@ df = cargar_datos()
 if not df.empty:
     total_ingresos = df[df["Tipo"] == "Ingreso"]["Monto"].sum()
     total_gastos = df[df["Tipo"] == "Gasto"]["Monto"].sum()
-    total_ahorros = df[df["Tipo"].isin(["Ahorro", "Inversion"])]["Monto"].sum() # Tratamos inversión como ahorro/activo
+    total_ahorros = df[df["Tipo"].isin(["Ahorro", "Inversion"])]["Monto"].sum()
     disponible = total_ingresos - total_gastos - total_ahorros
-
+    
     st.markdown("---")
     c1, c2, c3 = st.columns(3)
     c1.metric("💵 Ingresos", f"${total_ingresos:,.2f}")
@@ -83,7 +142,6 @@ st.markdown("---")
 
 # --- INPUTS (ENTRADAS) ---
 st.subheader("📝 Nuevo Registro")
-
 c_input1, c_input2 = st.columns(2)
 with c_input1:
     monto = st.number_input("Monto ($)", min_value=0.0, step=1.0, format="%.2f")
