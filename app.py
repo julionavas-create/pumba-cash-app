@@ -72,7 +72,6 @@ def guardar_registro(tipo, categoria, monto, tasa, nota, user_id):
         return
 
         # Verificar si ya existe un registro duplicado reciente (últimos 5 segundos)
-        try:
 
             tiempo_limite = (datetime.now() - timedelta(seconds=5)).strftime("%Y-%m-%d %H:%M:%S")
         duplicados = (supabase.table("movimientos")
@@ -86,8 +85,6 @@ def guardar_registro(tipo, categoria, monto, tasa, nota, user_id):
                 if duplicados.data:
                                     st.warning("⚠️ Ya existe un registro idéntico reciente. Evita hacer clic múltiple en el mismo botón.")
                                     return
-                            except Exception as e:
-        pass  # Si falla la verificación, continuar con el registro
     
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     nuevo_dato = {
@@ -279,6 +276,7 @@ else:
             st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
+
 
 
 
