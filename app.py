@@ -86,6 +86,7 @@ def guardar_registro(tipo, categoria, monto, tasa, nota, user_id):
                                     st.warning("⚠️ Ya existe un registro idéntico reciente. Evita hacer clic múltiple en el mismo botón.")
                                     return
                             except Exception as e:
+        pass  # Si falla la verificación, continuar con el registro
                                         pass  # Si falla la verificación, continuar con el registro
     
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -278,6 +279,7 @@ else:
             st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
+
 
 
 
