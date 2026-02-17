@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import time
 from supabase import create_client, Client
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
@@ -98,8 +99,29 @@ def guardar_registro(tipo, categoria, monto, tasa, nota, user_id):
         st.error(f"❌ Error al guardar: {str(e)}")
 
 # --- INTERFAZ DE LOGIN/REGISTRO ---
+
+# --- CONFIGURAR TIMEOUT DE SESIÓN (5 minutos) ---
+SESSION_TIMEOUT = 300  # 5 minutos en segundos
+
+# Inicializar variables de sesión
 if 'user' not in st.session_state:
     st.session_state.user = None
+if 'last_activity' not in st.session_state:
+    st.session_state.last_activity = time.time()
+
+# Verificar timeout de inactividad
+if st.session_state.user is not None:
+    current_time = time.time()
+    time_since_activity = current_time - st.session_state.last_activity
+    
+    if time_since_activity > SESSION_TIMEOUT:
+        # Sesión expirada por inactividad
+        st.session_state.clear()
+        st.warning("⏰ Tu sesión expiró por inactividad. Por favor inicia sesión nuevamente.")
+        st.rerun()
+    else:
+        # Actualizar tiempo de última actividad
+        st.session_state.last_activity = current_time
 
 if st.session_state.user is None:
     st.title("🐗 Pumba Cash Web")
@@ -239,4 +261,5 @@ else:
             st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
+
 
