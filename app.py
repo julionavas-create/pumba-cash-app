@@ -196,7 +196,7 @@ else:
     col2.metric("🍅 Gastos", f"${total_gastos:.2f}")
     col3.metric("🐷 Ahorros/Inv", f"${total_ahorros:.2f}")
     
-    disponible = total_ingresos - total_gastos - total_ahorros
+    disponible = total_ingresos - total_gastos + total_ahorros
     st.info(f"💰 DISPONIBLE EN MANO: ${disponible:.2f}")
     
     st.markdown("---")
@@ -262,6 +262,7 @@ else:
             st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
+
 
 
 
