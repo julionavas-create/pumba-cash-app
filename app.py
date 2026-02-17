@@ -82,9 +82,9 @@ def guardar_registro(tipo, categoria, monto, tasa, nota, user_id):
         .eq("monto", float(monto))
         .gte("fecha", tiempo_limite)
         .execute())
-            if duplicados.data:
-                                st.warning("⚠️ Ya existe un registro idéntico reciente. Evita hacer clic múltiple en el mismo botón.")
-                                return
+        if duplicados.data:
+                            st.warning("⚠️ Ya existe un registro idéntico reciente. Evita hacer clic múltiple en el mismo botón.")
+                            return
     
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     nuevo_dato = {
@@ -276,6 +276,7 @@ else:
             st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
+
 
 
 
