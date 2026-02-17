@@ -1,114 +1,82 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from github import Github
-import base64
+from supabase import create_client, Client
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Pumba Cash App", page_icon="🐗", layout="centered")
 
-# --- CONFIGURACIÓN DE GITHUB ---
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-GITHUB_REPO = st.secrets["GITHUB_REPO"]
-GITHUB_BRANCH = st.secrets["GITHUB_BRANCH"]
-CSV_FILE = st.secrets["CSV_FILE"]
+# --- CONFIGURACIÓN DE SUPABASE ---
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
-# --- FUNCIONES DE BACKEND CON GITHUB ---
+# --- INICIALIZAR CONEXIÓN CON SUPABASE ---
 @st.cache_resource
-def get_github_repo():
-    """Inicializa conexión con GitHub (se cachea para no repetir)"""
-    g = Github(GITHUB_TOKEN)
-    return g.get_repo(GITHUB_REPO)
+def get_supabase_client():
+    """Inicializa conexión con Supabase (se cachea para no repetir)"""
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def leer_csv_desde_github():
-    """Lee el archivo CSV desde GitHub"""
-    try:
-        repo = get_github_repo()
-        file_content = repo.get_contents(CSV_FILE, ref=GITHUB_BRANCH)
-        csv_data = base64.b64decode(file_content.content).decode('utf-8')
-        
-        # Convertir CSV string a DataFrame
-        from io import StringIO
-        df = pd.read_csv(StringIO(csv_data))
-        return df, file_content.sha
-    except Exception as e:
-        # Si el archivo no existe o hay error, retornamos DataFrame vacío
-        st.warning(f"Leyendo archivo desde GitHub... {str(e)}")
-        return pd.DataFrame(columns=["Fecha", "Tipo", "Categoria", "Monto", "Tasa", "Nota"]), None
+supabase: Client = get_supabase_client()
 
-def guardar_csv_en_github(df, sha=None):
-    """Guarda el DataFrame en GitHub"""
-    try:
-        repo = get_github_repo()
-        
-        # Convertir DataFrame a CSV string
-        csv_content = df.to_csv(index=False)
-        
-        # Actualizar o crear el archivo en GitHub
-        if sha:
-            # Actualizar archivo existente
-            repo.update_file(
-                path=CSV_FILE,
-                message=f"Actualizar registros - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                content=csv_content,
-                sha=sha,
-                branch=GITHUB_BRANCH
-            )
-        else:
-            # Crear archivo nuevo
-            repo.create_file(
-                path=CSV_FILE,
-                message=f"Crear archivo de registros - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                content=csv_content,
-                branch=GITHUB_BRANCH
-            )
-        return True
-    except Exception as e:
-        st.error(f"Error al guardar en GitHub: {str(e)}")
-        return False
-
+# --- FUNCIONES DE BACKEND CON SUPABASE ---
 def cargar_datos():
-    """Carga datos desde GitHub"""
-    df, _ = leer_csv_desde_github()
-    return df
+    """Carga datos desde Supabase"""
+    try:
+        response = supabase.table("movimientos").select("*").execute()
+        if response.data:
+            df = pd.DataFrame(response.data)
+            # Renombrar columnas para que coincidan con el formato anterior
+            if 'fecha' in df.columns:
+                df.rename(columns={
+                    'fecha': 'Fecha',
+                    'tipo': 'Tipo',
+                    'categoria': 'Categoria',
+                    'monto': 'Monto',
+                    'tasa': 'Tasa',
+                    'descripcion': 'Nota'
+                }, inplace=True)
+            return df
+        else:
+            return pd.DataFrame(columns=["Fecha", "Tipo", "Categoria", "Monto", "Tasa", "Nota"])
+    except Exception as e:
+        st.error(f"Error al cargar datos: {str(e)}")
+        return pd.DataFrame(columns=["Fecha", "Tipo", "Categoria", "Monto", "Tasa", "Nota"])
 
 def guardar_registro(tipo, categoria, monto, tasa, nota):
-    """Guarda un nuevo registro en GitHub"""
+    """Guarda un nuevo registro en Supabase"""
     if monto <= 0:
         st.error("⚠️ El monto debe ser mayor a 0")
         return
     
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     nuevo_dato = {
-        "Fecha": fecha,
-        "Tipo": tipo,
-        "Categoria": categoria,
-        "Monto": monto,
-        "Tasa": tasa,
-        "Nota": nota
+        "fecha": fecha,
+        "tipo": tipo,
+        "categoria": categoria,
+        "monto": float(monto),
+        "tasa": float(tasa),
+        "descripcion": nota
     }
     
-    # Cargar datos actuales desde GitHub
-    df, sha = leer_csv_desde_github()
-    
-    # Agregar nuevo registro
-    df = pd.concat([df, pd.DataFrame([nuevo_dato])], ignore_index=True)
-    
-    # Guardar en GitHub
-    if guardar_csv_en_github(df, sha):
-        # Mensaje de éxito
-        if tipo == "Ingreso":
-            st.success(f"✅ Ingreso registrado: {categoria} (${monto})")
-        elif tipo == "Gasto":
-            st.warning(f"📉 Gasto registrado: {categoria} (-${monto})")
-        else:
-            st.info(f"🐷 Ahorro registrado: {categoria} (${monto})")
+    try:
+        # Insertar en Supabase
+        response = supabase.table("movimientos").insert(nuevo_dato).execute()
         
-        # Limpiar cache para recargar datos
-        st.cache_resource.clear()
-        st.rerun()
-    else:
-        st.error("❌ Error al guardar el registro")
+        if response.data:
+            # Mensaje de éxito
+            if tipo == "Ingreso":
+                st.success(f"✅ Ingreso registrado: {categoria} (${monto})")
+            elif tipo == "Gasto":
+                st.warning(f"📉 Gasto registrado: {categoria} (-${monto})")
+            else:
+                st.info(f"🐷 Ahorro registrado: {categoria} (${monto})")
+            
+            # Limpiar cache para recargar datos
+            st.rerun()
+        else:
+            st.error("❌ Error al guardar el registro")
+    except Exception as e:
+        st.error(f"❌ Error al guardar: {str(e)}")
 
 # --- HEADER (Imagen y Título) ---
 col_img, col_title = st.columns([1, 4])
@@ -117,11 +85,13 @@ with col_img:
         st.image("pumba.png", width=80)
     except:
         st.write("🐗")
+
 with col_title:
     st.title("Pumba Cash Web")
 
 # --- PANEL DE RESUMEN (DASHBOARD) ---
 df = cargar_datos()
+
 if not df.empty:
     total_ingresos = df[df["Tipo"] == "Ingreso"]["Monto"].sum()
     total_gastos = df[df["Tipo"] == "Gasto"]["Monto"].sum()
@@ -142,6 +112,7 @@ st.markdown("---")
 
 # --- INPUTS (ENTRADAS) ---
 st.subheader("📝 Nuevo Registro")
+
 c_input1, c_input2 = st.columns(2)
 with c_input1:
     monto = st.number_input("Monto ($)", min_value=0.0, step=1.0, format="%.2f")
