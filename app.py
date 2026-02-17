@@ -18,14 +18,36 @@ def get_supabase_client():
 
 supabase: Client = get_supabase_client()
 
-# --- FUNCIONES DE BACKEND CON SUPABASE ---
-def cargar_datos():
-    """Carga datos desde Supabase"""
+# --- FUNCIONES DE AUTENTICACIÓN ---
+def login_user(email, password):
+    """Inicia sesión de usuario"""
     try:
-        response = supabase.table("movimientos").select("*").execute()
+        response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        return response
+    except Exception as e:
+        return None
+
+def register_user(email, password):
+    """Registra un nuevo usuario"""
+    try:
+        response = supabase.auth.sign_up({"email": email, "password": password})
+        return response
+    except Exception as e:
+        return None
+
+def logout_user():
+    """Cierra sesión del usuario"""
+    st.session_state.clear()
+    st.rerun()
+
+# --- FUNCIONES DE BACKEND CON SUPABASE ---
+def cargar_datos(user_id):
+    """Carga datos desde Supabase para el usuario autenticado"""
+    try:
+        response = supabase.table("movimientos").select("*").eq("user_id", user_id).execute()
         if response.data:
             df = pd.DataFrame(response.data)
-            # Renombrar columnas para que coincidan con el formato anterior
+            # Renombrar columnas
             if 'fecha' in df.columns:
                 df.rename(columns={
                     'fecha': 'Fecha',
@@ -42,7 +64,7 @@ def cargar_datos():
         st.error(f"Error al cargar datos: {str(e)}")
         return pd.DataFrame(columns=["Fecha", "Tipo", "Categoria", "Monto", "Tasa", "Nota"])
 
-def guardar_registro(tipo, categoria, monto, tasa, nota):
+def guardar_registro(tipo, categoria, monto, tasa, nota, user_id):
     """Guarda un nuevo registro en Supabase"""
     if monto <= 0:
         st.error("⚠️ El monto debe ser mayor a 0")
@@ -55,116 +77,165 @@ def guardar_registro(tipo, categoria, monto, tasa, nota):
         "categoria": categoria,
         "monto": float(monto),
         "tasa": float(tasa),
-        "descripcion": nota
+        "descripcion": nota,
+        "user_id": user_id
     }
     
     try:
-        # Insertar en Supabase
         response = supabase.table("movimientos").insert(nuevo_dato).execute()
         
         if response.data:
-            # Mensaje de éxito
             if tipo == "Ingreso":
                 st.success(f"✅ Ingreso registrado: {categoria} (${monto})")
             elif tipo == "Gasto":
                 st.warning(f"📉 Gasto registrado: {categoria} (-${monto})")
             else:
                 st.info(f"🐷 Ahorro registrado: {categoria} (${monto})")
-            
-            # Limpiar cache para recargar datos
             st.rerun()
         else:
             st.error("❌ Error al guardar el registro")
     except Exception as e:
         st.error(f"❌ Error al guardar: {str(e)}")
 
-# --- HEADER (Imagen y Título) ---
-col_img, col_title = st.columns([1, 4])
-with col_img:
-    try:
-        st.image("pumba.png", width=80)
-    except:
-        st.write("🐗")
+# --- INTERFAZ DE LOGIN/REGISTRO ---
+if 'user' not in st.session_state:
+    st.session_state.user = None
 
-with col_title:
-    st.title("Pumba Cash Web")
-
-# --- PANEL DE RESUMEN (DASHBOARD) ---
-df = cargar_datos()
-
-if not df.empty:
-    total_ingresos = df[df["Tipo"] == "Ingreso"]["Monto"].sum()
-    total_gastos = df[df["Tipo"] == "Gasto"]["Monto"].sum()
-    total_ahorros = df[df["Tipo"].isin(["Ahorro", "Inversion"])]["Monto"].sum()
+if st.session_state.user is None:
+    st.title("🐗 Pumba Cash Web")
+    st.markdown("### Sistema de Control Financiero Personal")
+    
+    tab1, tab2 = st.tabs(["Iniciar Sesión", "Registrarse"])
+    
+    with tab1:
+        st.subheader("Iniciar Sesión")
+        email_login = st.text_input("Email", key="email_login")
+        password_login = st.text_input("Contraseña", type="password", key="password_login")
+        
+        if st.button("Entrar", key="login_button"):
+            if email_login and password_login:
+                response = login_user(email_login, password_login)
+                if response and response.user:
+                    st.session_state.user = response.user
+                    st.success("¡Bienvenido!")
+                    st.rerun()
+                else:
+                    st.error("Email o contraseña incorrectos")
+            else:
+                st.error("Por favor completa todos los campos")
+    
+    with tab2:
+        st.subheader("Crear Cuenta Nueva")
+        email_register = st.text_input("Email", key="email_register")
+        password_register = st.text_input("Contraseña (mínimo 6 caracteres)", type="password", key="password_register")
+        password_confirm = st.text_input("Confirmar Contraseña", type="password", key="password_confirm")
+        
+        if st.button("Crear Cuenta", key="register_button"):
+            if email_register and password_register and password_confirm:
+                if password_register == password_confirm:
+                    if len(password_register) >= 6:
+                        response = register_user(email_register, password_register)
+                        if response and response.user:
+                            st.success("✅ Cuenta creada! Revisa tu email para confirmar tu cuenta.")
+                        else:
+                            st.error("Error al crear la cuenta. El email puede estar ya registrado.")
+                    else:
+                        st.error("La contraseña debe tener al menos 6 caracteres")
+                else:
+                    st.error("Las contraseñas no coinciden")
+            else:
+                st.error("Por favor completa todos los campos")
+else:
+    # Usuario autenticado - mostrar la aplicación principal
+    user_id = st.session_state.user.id
+    user_email = st.session_state.user.email
+    
+    # Header con opción de logout
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.title("🐗 Pumba Cash Web")
+    with col2:
+        st.write(f"👤 {user_email}")
+        if st.button("Cerrar Sesión"):
+            logout_user()
+    
+    # Cargar datos del usuario
+    df = cargar_datos(user_id)
+    
+    # Calcular resúmenes
+    total_ingresos = df[df["Tipo"] == "Ingreso"]["Monto"].sum() if not df.empty else 0
+    total_gastos = df[df["Tipo"] == "Gasto"]["Monto"].sum() if not df.empty else 0
+    total_ahorros = df[df["Tipo"].str.contains("Ahorro|Inversión", na=False)]["Monto"].sum() if not df.empty else 0
+    
+    # Mostrar resumen
+    col1, col2, col3 = st.columns(3)
+    col1.metric("💚 Ingresos", f"${total_ingresos:.2f}")
+    col2.metric("🍅 Gastos", f"${total_gastos:.2f}")
+    col3.metric("🐷 Ahorros/Inv", f"${total_ahorros:.2f}")
+    
     disponible = total_ingresos - total_gastos - total_ahorros
+    st.info(f"💰 DISPONIBLE EN MANO: ${disponible:.2f}")
     
     st.markdown("---")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("💵 Ingresos", f"${total_ingresos:,.2f}")
-    c2.metric("💸 Gastos", f"${total_gastos:,.2f}")
-    c3.metric("🐷 Ahorros/Inv", f"${total_ahorros:,.2f}")
     
-    st.info(f"💰 **DISPONIBLE EN MANO:** ${disponible:,.2f}")
-else:
-    st.info("👋 Bienvenido. Empieza a registrar tus movimientos.")
-
-st.markdown("---")
-
-# --- INPUTS (ENTRADAS) ---
-st.subheader("📝 Nuevo Registro")
-
-c_input1, c_input2 = st.columns(2)
-with c_input1:
-    monto = st.number_input("Monto ($)", min_value=0.0, step=1.0, format="%.2f")
-with c_input2:
-    tasa = st.number_input("Tasa (Bs)", min_value=0.0, step=0.1, format="%.2f")
-
-nota = st.text_input("Nota (Opcional)")
-
-# --- BOTONES DE ACCIÓN ---
-st.write("Selecciona la categoría para guardar:")
-
-# Fila 1
-b1, b2 = st.columns(2)
-if b1.button("⛽ Gasolina"): guardar_registro("Gasto", "Gasolina", monto, tasa, nota)
-if b2.button("🚗 Mant. Carro"): guardar_registro("Gasto", "Carro Repuestos", monto, tasa, nota)
-
-# Fila 2
-b3, b4 = st.columns(2)
-if b3.button("🏍️ Gastos Moto"): guardar_registro("Gasto", "Moto Repuestos", monto, tasa, nota)
-if b4.button("🛍️ Pago Cashea"): guardar_registro("Gasto", "Cashea", monto, tasa, nota)
-
-# Fila 3
-b5, b6 = st.columns(2)
-if b5.button("🍔 Comida"): guardar_registro("Gasto", "Comida", monto, tasa, nota)
-if b6.button("🍻 Salidas"): guardar_registro("Gasto", "Entretenimiento", monto, tasa, nota)
-
-# Fila 4
-b7, b8 = st.columns(2)
-if b7.button("💳 Créditos"): guardar_registro("Gasto", "Créditos", monto, tasa, nota)
-if b8.button("💼 Inversión Ofic."): guardar_registro("Inversion", "Oficina", monto, tasa, nota)
-
-# Fila 5
-b9, b10 = st.columns(2)
-if b9.button("💊 Salud"): guardar_registro("Gasto", "Salud", monto, tasa, nota)
-if b10.button("🔧 Otros Vehículo"): guardar_registro("Gasto", "Vehículo General", monto, tasa, nota)
-
-st.markdown("#### 💱 Divisas y Capital")
-d1, d2 = st.columns(2)
-if d1.button("📉 Venta Divisas (Salida)"): guardar_registro("Gasto", "Venta Divisas", monto, tasa, nota)
-if d2.button("📈 Compra Divisas (Ahorro)"): guardar_registro("Ahorro", "Compra Divisas", monto, tasa, nota)
-
-k1, k2 = st.columns(2)
-if k1.button("💵 Ingreso Quincena"): guardar_registro("Ingreso", "Salario", monto, tasa, nota)
-if k2.button("🐷 Otros Ahorros"): guardar_registro("Ahorro", "Fondo Ahorro", monto, tasa, nota)
-
-# --- HISTORIAL ---
-st.markdown("---")
-with st.expander("📜 Ver Historial Completo"):
-    if not df.empty:
-        # Calculamos el total en Bs para mostrarlo
-        df["Total Bs"] = df["Monto"] * df["Tasa"]
-        # Ordenamos descendente para ver lo último primero
-        st.dataframe(df.sort_index(ascending=False), use_container_width=True)
-    else:
-        st.text("No hay datos aún.")
+    # Formulario de nuevo registro
+    st.subheader("📝 Nuevo Registro")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        monto_input = st.number_input("Monto ($)", min_value=0.00, format="%.2f", key="monto")
+    with col2:
+        tasa_input = st.number_input("Tasa (Bs)", min_value=0.00, format="%.2f", key="tasa")
+    
+    nota_input = st.text_input("Nota (Opcional)", key="nota")
+    
+    st.write("Selecciona la categoría para guardar:")
+    
+    # Botones de categorías
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("⛽ Gasolina", use_container_width=True):
+            guardar_registro("Gasto", "Gasolina", monto_input, tasa_input, nota_input, user_id)
+        if st.button("🏍️ Gastos Moto", use_container_width=True):
+            guardar_registro("Gasto", "Gastos Moto", monto_input, tasa_input, nota_input, user_id)
+        if st.button("🍔 Comida", use_container_width=True):
+            guardar_registro("Gasto", "Comida", monto_input, tasa_input, nota_input, user_id)
+        if st.button("💳 Créditos", use_container_width=True):
+            guardar_registro("Gasto", "Créditos", monto_input, tasa_input, nota_input, user_id)
+        if st.button("💊 Salud", use_container_width=True):
+            guardar_registro("Gasto", "Salud", monto_input, tasa_input, nota_input, user_id)
+    
+    with col2:
+        if st.button("🚗 Mant. Carro", use_container_width=True):
+            guardar_registro("Gasto", "Mant. Carro", monto_input, tasa_input, nota_input, user_id)
+        if st.button("📱 Pago Cashea", use_container_width=True):
+            guardar_registro("Gasto", "Pago Cashea", monto_input, tasa_input, nota_input, user_id)
+        if st.button("🚀 Salidas", use_container_width=True):
+            guardar_registro("Gasto", "Salidas", monto_input, tasa_input, nota_input, user_id)
+        if st.button("🏢 Inversión Ofic.", use_container_width=True):
+            guardar_registro("Ahorro", "Inversión Ofic.", monto_input, tasa_input, nota_input, user_id)
+        if st.button("🔧 Otros Vehiculo", use_container_width=True):
+            guardar_registro("Gasto", "Otros Vehiculo", monto_input, tasa_input, nota_input, user_id)
+    
+    st.markdown("### 💱 Divisas y Capital")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📤 Venta Divisas (Salida)", use_container_width=True):
+            guardar_registro("Gasto", "Venta Divisas", monto_input, tasa_input, nota_input, user_id)
+        if st.button("💵 Ingreso Quincena", use_container_width=True):
+            guardar_registro("Ingreso", "Ingreso Quincena", monto_input, tasa_input, nota_input, user_id)
+    with col2:
+        if st.button("📥 Compra Divisas (Ahorro)", use_container_width=True):
+            guardar_registro("Ahorro", "Compra Divisas", monto_input, tasa_input, nota_input, user_id)
+        if st.button("💰 Otros Ahorros", use_container_width=True):
+            guardar_registro("Ahorro", "Otros Ahorros", monto_input, tasa_input, nota_input, user_id)
+    
+    # Mostrar historial
+    with st.expander("📊 Ver Historial Completo"):
+        if not df.empty:
+            df_display = df.copy()
+            df_display["Total Bs"] = df_display["Monto"] * df_display["Tasa"]
+            st.dataframe(df_display, use_container_width=True)
+        else:
+            st.info("No hay registros aún. ¡Empieza a registrar tus movimientos!")
